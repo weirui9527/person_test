@@ -460,11 +460,13 @@ static void installAndroidBootLog()
 
     static QFile file;
     file.setFileName(dir + QStringLiteral("/speedynote_boot.log"));
-    // Fresh log each launch; the first lines tell the user exactly where to look.
-    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+    // Append (not truncate): the Java Activity writes its pre-native-load lines
+    // to this same file first, so truncating here would erase the evidence of how
+    // far startup got before main() was even reached.
+    if (file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
         g_bootLogFile = &file;
         qInstallMessageHandler(androidBootMessageHandler);
-        bootLogWrite(QStringLiteral("=== SpeedyNote boot ==="));
+        bootLogWrite(QStringLiteral("=== [native] Qt main() reached ==="));
         bootLogWrite(QStringLiteral("Qt ") + QString::fromLatin1(qVersion()));
         bootLogWrite(QStringLiteral("log file: ") + file.fileName());
     }

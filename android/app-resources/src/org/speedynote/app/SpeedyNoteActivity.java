@@ -9,6 +9,11 @@ import android.view.View;
 
 import org.qtproject.qt.android.bindings.QtActivity;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
 /**
  * Custom Activity for SpeedyNote.
  * 
@@ -56,8 +61,37 @@ public class SpeedyNoteActivity extends QtActivity {
     
     @Override
     public void onCreate(android.os.Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+        // Java-side boot log: brackets the native library load that happens
+        // inside QtActivity.onCreate (System.loadLibrary of Qt + MuPDF + the app
+        // lib). If the process dies loading those .so files, the C++ main() never
+        // runs, so only this Java log proves how far startup got. Appends to the
+        // same speedynote_boot.log the C++ side uses, giving one ordered timeline.
+        jboot("onCreate enter");
+        try {
+            super.onCreate(savedInstanceState);
+            jboot("super.onCreate returned (native libs loaded, Qt thread started)");
+        } catch (Throwable t) {
+            jboot("super.onCreate THREW: " + t);
+            throw t;
+        }
         sInstance = this;
+        jboot("onCreate done");
+    }
+
+    /** Append a timestamped line to the app's external-files boot log. */
+    private void jboot(String msg) {
+        try {
+            File dir = getExternalFilesDir(null);
+            if (dir == null)
+                dir = getFilesDir();
+            File log = new File(dir, "speedynote_boot.log");
+            String ts = new SimpleDateFormat("HH:mm:ss.SSS").format(new Date());
+            try (FileWriter fw = new FileWriter(log, true)) {
+                fw.write(ts + " [java] " + msg + "\n");
+            }
+        } catch (Throwable ignored) {
+            // Logging must never itself break startup.
+        }
     }
     
     @Override
