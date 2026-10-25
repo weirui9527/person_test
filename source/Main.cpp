@@ -1252,6 +1252,20 @@ private:
 int main(int argc, char* argv[])
 {
 #ifdef Q_OS_ANDROID
+    // Decisive probe: call straight back into Java to log that native main() is
+    // running. This bypasses the C++ file logger entirely, so it lands even if
+    // installAndroidBootLog() below cannot open its file. If this [native-cb]
+    // line shows up but the [native]/[I] lines never do, the C++ logger path is
+    // the problem (main runs, it is a rendering issue); if it does not show up at
+    // all, main() is genuinely never reached (early Qt-thread crash).
+    {
+        QJniObject cbMsg = QJniObject::fromString(QStringLiteral("main() reached (native->java callback)"));
+        QJniObject::callStaticMethod<void>(
+            "org/speedynote/app/SpeedyNoteActivity",
+            "logFromNative",
+            "(Ljava/lang/String;)V",
+            cbMsg.object());
+    }
     // Install the file logger first so every later qDebug/qInfo (including the
     // milestones below and any Qt warnings) lands in speedynote_boot.log.
     installAndroidBootLog();

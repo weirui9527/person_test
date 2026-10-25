@@ -99,6 +99,26 @@ public class SpeedyNoteActivity extends QtActivity {
         return sBootLogDir;
     }
 
+    /**
+     * Called from C++ main() via JNI to append a line to the boot log. This is a
+     * decisive probe that does NOT depend on the C++ side managing to open the log
+     * file itself: if native main() runs, this Java write (to a proven-writable
+     * dir) will land. Its presence/absence separates "main never ran" from "main
+     * ran but the C++ logger failed to write here".
+     */
+    public static void logFromNative(String msg) {
+        try {
+            if (sBootLogDir == null)
+                return;
+            File log = new File(sBootLogDir, "speedynote_boot.log");
+            String ts = new SimpleDateFormat("HH:mm:ss.SSS").format(new Date());
+            try (FileWriter fw = new FileWriter(log, true)) {
+                fw.write(ts + " [native-cb] " + msg + "\n");
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** Append a timestamped line to the app's external-files boot log. */
     private void jboot(String msg) {
         try {
