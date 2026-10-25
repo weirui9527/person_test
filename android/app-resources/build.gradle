@@ -18,7 +18,11 @@ repositories {
     mavenCentral()
 }
 
-apply plugin: qtGradlePluginType
+// Qt 6.5+ injects qtGradlePluginType into the generated gradle.properties; the
+// Qt 6.4.x androiddeployqt does NOT define it, so fall back to the plain
+// application plugin. This keeps the file valid across both toolchains.
+def qtPluginType = project.hasProperty('qtGradlePluginType') ? qtGradlePluginType : 'com.android.application'
+apply plugin: qtPluginType
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
