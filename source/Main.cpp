@@ -37,6 +37,10 @@
 #include <QDebug>
 #include <QPalette>
 #include <QJniObject>
+#include <QFile>
+#include <QTextStream>
+#include <QDateTime>
+#include <QMutex>
 #endif
 
 #ifdef Q_OS_IOS
@@ -406,6 +410,64 @@ static void logAndroidPaths()
     // Note: On Android 13+ (API 33+), READ_EXTERNAL_STORAGE is deprecated.
     // PDF file access requires Storage Access Framework (SAF).
     // QFileDialog uses SAF, but content:// URI handling in Qt may have issues.
+}
+
+// ---- Boot file logger (Android) -------------------------------------------
+// The target device (iReader Smart2) is a locked-down Android 7 that exposes no
+// USB debugging, so `adb logcat` is unavailable. To still capture startup
+// diagnostics, mirror every qDebug/qInfo/qWarning/qCritical message plus a few
+// explicit milestones into a plain-text file under the app's external files
+// directory. That directory lives on shared storage and is reachable over USB
+// (MTP) - the same channel used to sideload the APK - so the user can pull the
+// log with a normal file manager on a PC.
+static QFile* g_bootLogFile = nullptr;
+static QMutex g_bootLogMutex;
+
+static void bootLogWrite(const QString& line)
+{
+    if (!g_bootLogFile)
+        return;
+    QMutexLocker locker(&g_bootLogMutex);
+    QTextStream ts(g_bootLogFile);
+    ts << QDateTime::currentDateTime().toString("HH:mm:ss.zzz") << ' ' << line << '\n';
+    ts.flush();               // flush every line so a hang/crash still leaves output
+    g_bootLogFile->flush();
+}
+
+static void androidBootMessageHandler(QtMsgType type, const QMessageLogContext&, const QString& msg)
+{
+    const char* tag =
+        type == QtDebugMsg    ? "D" :
+        type == QtInfoMsg     ? "I" :
+        type == QtWarningMsg  ? "W" :
+        type == QtCriticalMsg ? "C" : "F";
+    bootLogWrite(QStringLiteral("[%1] %2").arg(QString::fromLatin1(tag), msg));
+}
+
+static void installAndroidBootLog()
+{
+    QString dir;
+    QJniObject activity = QJniObject::callStaticObjectMethod(
+        "org/qtproject/qt/android/QtNative", "activity", "()Landroid/app/Activity;");
+    if (activity.isValid()) {
+        QJniObject filesDir = activity.callObjectMethod(
+            "getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;", nullptr);
+        if (filesDir.isValid())
+            dir = filesDir.toString();
+    }
+    if (dir.isEmpty())
+        dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+
+    static QFile file;
+    file.setFileName(dir + QStringLiteral("/speedynote_boot.log"));
+    // Fresh log each launch; the first lines tell the user exactly where to look.
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        g_bootLogFile = &file;
+        qInstallMessageHandler(androidBootMessageHandler);
+        bootLogWrite(QStringLiteral("=== SpeedyNote boot ==="));
+        bootLogWrite(QStringLiteral("Qt ") + QString::fromLatin1(qVersion()));
+        bootLogWrite(QStringLiteral("log file: ") + file.fileName());
+    }
 }
 
 /**
@@ -1187,6 +1249,13 @@ private:
 
 int main(int argc, char* argv[])
 {
+#ifdef Q_OS_ANDROID
+    // Install the file logger first so every later qDebug/qInfo (including the
+    // milestones below and any Qt warnings) lands in speedynote_boot.log.
+    installAndroidBootLog();
+    qInfo() << "main() entered";
+#endif
+
     // ========== CLI Mode Detection (Desktop Only) ==========
     // Check for CLI commands before creating QApplication to avoid full GUI overhead.
     // CLI mode uses QGuiApplication (not QCoreApplication) because:
@@ -1224,6 +1293,9 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
     app.setOrganizationName("SpeedyNote");
     app.setApplicationName("App");
+#ifdef Q_OS_ANDROID
+    qInfo() << "QApplication created (platform plugin + GL context initialized)";
+#endif
 
 #ifdef Q_OS_WIN
     applyWindowsPalette(app);
@@ -1437,6 +1509,9 @@ int main(int argc, char* argv[])
     // briefly to prime NSApp activation; on other platforms it's hidden
     // until a branch decides to surface it. See createLauncherForColdStart.
     auto* launcher = createLauncherForColdStart();
+#ifdef Q_OS_ANDROID
+    qInfo() << "launcher created, about to show first window";
+#endif
 
     // Local helpers fold the per-branch platform-conditional registration
     // into one place. fileOpenFilter / inboxWatcher are local-to-main and
@@ -1536,6 +1611,9 @@ int main(int argc, char* argv[])
         registerLauncherWithPlatform(launcher);
     }
 
+#ifdef Q_OS_ANDROID
+    qInfo() << "window shown, entering event loop";
+#endif
     int exitCode = app.exec();
 
     return exitCode;
