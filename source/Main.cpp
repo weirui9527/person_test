@@ -444,6 +444,27 @@ static void androidBootMessageHandler(QtMsgType type, const QMessageLogContext&,
     bootLogWrite(QStringLiteral("[%1] %2").arg(QString::fromLatin1(tag), msg));
 }
 
+// Pure-C++ probe that does NOT use JNI or QStandardPaths: writes a marker to a
+// hardcoded absolute path in the app's external files dir (the same dir the Java
+// Activity proves is writable). If this file appears, native main() definitely
+// ran; if it does not, main() was never reached. Removes the "JNI FindClass from
+// the Qt thread failed silently" ambiguity from the [native-cb] callback test.
+static void nativeMainProbe()
+{
+    static const char* const candidates[] = {
+        "/storage/emulated/0/Android/data/org.speedynote.app/files/speedynote_native.log",
+        "/sdcard/Android/data/org.speedynote.app/files/speedynote_native.log",
+    };
+    for (const char* path : candidates) {
+        QFile f(QString::fromLatin1(path));
+        if (f.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+            f.write("native main() ran\n");
+            f.flush();
+            f.close();
+        }
+    }
+}
+
 static void installAndroidBootLog()
 {
     // Read the external files dir that the Java Activity already resolved and
@@ -1252,6 +1273,9 @@ private:
 int main(int argc, char* argv[])
 {
 #ifdef Q_OS_ANDROID
+    // First, the JNI-free hardcoded probe so we can tell definitively whether
+    // main() ran even if every other logging channel has an issue.
+    nativeMainProbe();
     // Decisive probe: call straight back into Java to log that native main() is
     // running. This bypasses the C++ file logger entirely, so it lands even if
     // installAndroidBootLog() below cannot open its file. If this [native-cb]
