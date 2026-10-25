@@ -130,11 +130,14 @@ RUN /opt/aqt-venv/bin/aqt install-qt linux android ${QT_VERSION} android_armv7 \
     -O ${QT_ROOT} \
     --modules qtimageformats
 
-# Install Qt host tools (needed for moc, uic, rcc, etc.)
-# Note: For Qt 6.x, architecture is "linux_gcc_64" not "gcc_64"
+# Install Qt host tools (needed for moc, uic, rcc, androiddeployqt, etc.)
+# Note: For Qt 6.x, architecture is "linux_gcc_64" not "gcc_64".
+# Intentionally NO --modules here: the host install only needs the build tools
+# themselves. The qtimageformats plugin is a *runtime* component that ships from
+# the Android Qt install above and gets packaged into the APK; requesting it for
+# the desktop host is unnecessary and is what made this step fail on Qt 6.4.3.
 RUN /opt/aqt-venv/bin/aqt install-qt linux desktop ${QT_VERSION} linux_gcc_64 \
-    -O ${QT_ROOT} \
-    --modules qtimageformats
+    -O ${QT_ROOT}
 
 # =============================================================================
 # Pin the Gradle wrapper version (AGP 7.4.2 + JDK 17 compatibility)
