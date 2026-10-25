@@ -1,0 +1,102 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        //noinspection AndroidGradlePluginVersion
+        // AGP 7.4.2 pairs with the Qt 6.4 toolchain and compileSdk 33.
+        // (Qt 6.9 used AGP 8.8.0, which requires compileSdk 34+ and Gradle 8.10+.)
+        // Requires a Gradle wrapper >= 7.5; see android/build-speedynote.sh notes.
+        classpath 'com.android.tools.build:gradle:7.4.2'
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+apply plugin: qtGradlePluginType
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+    //noinspection GradleDependency
+    // Downgraded for the Android 7 / Qt 6.4 build: these versions are the newest
+    // that still compile against compileSdk 33 (androidx.core 1.16.0 and ML Kit
+    // 19.0.0 both drag in compileSdk 34+ requirements). The APIs used here
+    // (FileProvider; DigitalInkRecognition/Ink/RecognitionResult) are unchanged.
+    implementation 'androidx.core:core:1.10.1'
+    implementation 'com.google.mlkit:digital-ink-recognition:18.2.3'
+}
+
+// Kotlin 1.8+ merged jdk7/jdk8 into kotlin-stdlib; force a single version
+// to avoid duplicate-class errors with older transitive deps from ML Kit.
+configurations.all {
+    resolutionStrategy.eachDependency { details ->
+        if (details.requested.group == 'org.jetbrains.kotlin'
+                && details.requested.name.startsWith('kotlin-stdlib')) {
+            details.useVersion '1.8.22'
+        }
+    }
+}
+
+android {
+    /*******************************************************
+     * The following variables:
+     * - androidBuildToolsVersion,
+     * - androidCompileSdkVersion
+     * - qtAndroidDir - holds the path to qt android files
+     *                   needed to build any Qt application
+     *                   on Android.
+     * - qtGradlePluginType - whether to build an app or a library
+     *
+     * are defined in gradle.properties file. This file is
+     * updated by QtCreator and androiddeployqt tools.
+     * Changing them manually might break the compilation!
+     *******************************************************/
+
+    namespace = androidPackageName
+    compileSdkVersion androidCompileSdkVersion
+    buildToolsVersion androidBuildToolsVersion
+    ndkVersion = androidNdkVersion
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = [qtAndroidDir + '/src', 'src', 'java']
+            aidl.srcDirs = [qtAndroidDir + '/src', 'src', 'aidl']
+            res.srcDirs = [qtAndroidDir + '/res', 'res']
+            resources.srcDirs = ['resources']
+            renderscript.srcDirs = ['src']
+            assets.srcDirs = ['assets']
+            jniLibs.srcDirs = ['libs']
+       }
+    }
+
+    tasks.withType(JavaCompile) {
+        options.incremental = true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lintOptions {
+        abortOnError = false
+    }
+
+    aaptOptions {
+        // Do not compress Qt binary resources file
+        noCompress 'rcc'
+    }
+
+    defaultConfig {
+        resConfig "en"
+        minSdkVersion qtMinSdkVersion
+        targetSdkVersion qtTargetSdkVersion
+        ndk.abiFilters = qtTargetAbiList.split(",")
+    }
+}
