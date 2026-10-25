@@ -27,12 +27,16 @@ apply plugin: qtPluginType
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
     //noinspection GradleDependency
-    // Downgraded for the Android 7 / Qt 6.4 build: these versions are the newest
-    // that still compile against compileSdk 33 (androidx.core 1.16.0 and ML Kit
-    // 19.0.0 both drag in compileSdk 34+ requirements). The APIs used here
-    // (FileProvider; DigitalInkRecognition/Ink/RecognitionResult) are unchanged.
+    // Downgraded for the Android 7 / Qt 6.4 build. ML Kit 19.0.0 drags in
+    // compileSdk 34+ requirements, so we use the newest 18.x release that still
+    // compiles against compileSdk 33. NOTE: 18.1.0 (released 2023-01-31) is the
+    // last real 18.x version on Google's Maven - "18.2.x" never existed and fails
+    // dependency resolution. Its transitive deps (androidx.work 2.7.0,
+    // kotlin-stdlib-jdk7 1.7.10, play-services-base 18.1.0) are all compileSdk 33
+    // era. The APIs used here (DigitalInkRecognition/Ink/RecognitionResult) are
+    // unchanged. androidx.core 1.16.0 also needs compileSdk 34, hence 1.10.1.
     implementation 'androidx.core:core:1.10.1'
-    implementation 'com.google.mlkit:digital-ink-recognition:18.2.3'
+    implementation 'com.google.mlkit:digital-ink-recognition:18.1.0'
 }
 
 // Kotlin 1.8+ merged jdk7/jdk8 into kotlin-stdlib; force a single version
