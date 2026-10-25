@@ -61,8 +61,12 @@ android {
      * Changing them manually might break the compilation!
      *******************************************************/
 
-    namespace = androidPackageName
-    compileSdkVersion androidCompileSdkVersion
+    // Qt 6.4.x androiddeployqt does NOT inject androidPackageName (namespace is a
+    // newer-Qt concept); the package comes from AndroidManifest.xml's
+    // package="org.speedynote.app", which AGP 7.4.2 honours when namespace is
+    // omitted. This mirrors the official Qt 6.4 template, which has no namespace
+    // line and reads androidCompileSdkVersion as a plain integer (e.g. "33").
+    compileSdkVersion androidCompileSdkVersion.toInteger()
     buildToolsVersion androidBuildToolsVersion
     ndkVersion = androidNdkVersion
 
