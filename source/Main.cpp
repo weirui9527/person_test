@@ -1270,6 +1270,105 @@ private:
 // Main Entry Point
 // ============================================================================
 
+// ---- Native crash probe (Android) -----------------------------------------
+// main() is never reached on the target device, so the failure happens in Qt's
+// own bootstrap after the app lib is dlopen'd but before it calls main(). With
+// no adb/root to read tombstones, we self-host a crash log: a global object's
+// constructor runs at System.loadLibrary time (before the crash) to (1) drop a
+// "lib loaded" marker and (2) install async-signal-safe handlers that dump the
+// fatal signal, faulting address, PC/LR and /proc/self/maps to a file the user
+// can pull over MTP. Pure POSIX, no Qt/JNI dependency.
+#ifdef Q_OS_ANDROID
+#include <csignal>
+#include <cstdio>
+#include <cstring>
+#include <unistd.h>
+#include <fcntl.h>
+#include <ucontext.h>
+
+static const char* const kSnCrashLogPath =
+    "/storage/emulated/0/Android/data/org.speedynote.app/files/speedynote_crash.log";
+
+// Async-signal-safe append: raw open/write/close, no heap, no stdio buffering.
+static void snAppendRaw(const char* buf, size_t len)
+{
+    int fd = open(kSnCrashLogPath, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0)
+        return;
+    size_t off = 0;
+    while (off < len) {
+        ssize_t n = write(fd, buf + off, len - off);
+        if (n <= 0)
+            break;
+        off += static_cast<size_t>(n);
+    }
+    close(fd);
+}
+
+static void snDumpMaps()
+{
+    int mfd = open("/proc/self/maps", O_RDONLY);
+    if (mfd < 0)
+        return;
+    char buf[4096];
+    ssize_t n;
+    while ((n = read(mfd, buf, sizeof(buf))) > 0)
+        snAppendRaw(buf, static_cast<size_t>(n));
+    close(mfd);
+}
+
+static const char* snSigName(int sig)
+{
+    switch (sig) {
+        case SIGSEGV: return "SIGSEGV";
+        case SIGABRT: return "SIGABRT";
+        case SIGBUS:  return "SIGBUS";
+        case SIGFPE:  return "SIGFPE";
+        case SIGILL:  return "SIGILL";
+        default:      return "SIG?";
+    }
+}
+
+static void snCrashHandler(int sig, siginfo_t* info, void* uctx)
+{
+    unsigned long pc = 0, lr = 0;
+#if defined(__aarch64__)
+    pc = static_cast<unsigned long>(reinterpret_cast<ucontext_t*>(uctx)->uc_mcontext.pc);
+    lr = static_cast<unsigned long>(reinterpret_cast<ucontext_t*>(uctx)->uc_mcontext.regs[30]);
+#elif defined(__arm__)
+    pc = static_cast<unsigned long>(reinterpret_cast<ucontext_t*>(uctx)->uc_mcontext.arm_pc);
+    lr = static_cast<unsigned long>(reinterpret_cast<ucontext_t*>(uctx)->uc_mcontext.arm_lr);
+#endif
+    char line[256];
+    int len = snprintf(line, sizeof(line),
+        "\n=== CRASH sig=%s si_addr=%p pc=0x%lx lr=0x%lx ===\n",
+        snSigName(sig), info ? info->si_addr : nullptr, pc, lr);
+    if (len > 0)
+        snAppendRaw(line, static_cast<size_t>(len));
+    snDumpMaps();
+    signal(sig, SIG_DFL);   // restore default and re-raise so the OS still acts
+    raise(sig);
+}
+
+struct SnBootProbe {
+    SnBootProbe() {
+        const char* msg = "\n[app lib] static init ran, installing crash handlers\n";
+        snAppendRaw(msg, strlen(msg));
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_sigaction = snCrashHandler;
+        sa.sa_flags = SA_SIGINFO;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGSEGV, &sa, nullptr);
+        sigaction(SIGABRT, &sa, nullptr);
+        sigaction(SIGBUS,  &sa, nullptr);
+        sigaction(SIGFPE,  &sa, nullptr);
+        sigaction(SIGILL,  &sa, nullptr);
+    }
+};
+static SnBootProbe g_snBootProbe;   // ctor runs at dlopen (System.loadLibrary)
+#endif  // Q_OS_ANDROID
+
 int main(int argc, char* argv[])
 {
 #ifdef Q_OS_ANDROID
