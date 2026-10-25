@@ -66,6 +66,14 @@ public class SpeedyNoteActivity extends QtActivity {
         // lib). If the process dies loading those .so files, the C++ main() never
         // runs, so only this Java log proves how far startup got. Appends to the
         // same speedynote_boot.log the C++ side uses, giving one ordered timeline.
+        // Capture the external files dir up front so the C++ logger (which runs
+        // later on the Qt thread) can write to the exact same MTP-visible file.
+        try {
+            File d = getExternalFilesDir(null);
+            if (d != null)
+                sBootLogDir = d.getAbsolutePath();
+        } catch (Throwable ignored) {
+        }
         jboot("onCreate enter");
         try {
             super.onCreate(savedInstanceState);
@@ -76,6 +84,19 @@ public class SpeedyNoteActivity extends QtActivity {
         }
         sInstance = this;
         jboot("onCreate done");
+    }
+
+    @Override
+    protected void onResume() {
+        jboot("onResume (activity lifecycle OK)");
+        super.onResume();
+    }
+
+    private static String sBootLogDir = null;
+
+    /** Absolute path of the app's external files dir, shared with the C++ logger. */
+    public static String bootLogDir() {
+        return sBootLogDir;
     }
 
     /** Append a timestamped line to the app's external-files boot log. */

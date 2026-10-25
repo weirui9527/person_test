@@ -446,15 +446,15 @@ static void androidBootMessageHandler(QtMsgType type, const QMessageLogContext&,
 
 static void installAndroidBootLog()
 {
+    // Read the external files dir that the Java Activity already resolved and
+    // proved writable (it writes its own lines there). Going through our own
+    // SpeedyNoteActivity static - the same JNI path isDarkMode() uses - is
+    // reliable on Qt 6.4.3, unlike QtNative.activity() which returns nothing.
     QString dir;
-    QJniObject activity = QJniObject::callStaticObjectMethod(
-        "org/qtproject/qt/android/QtNative", "activity", "()Landroid/app/Activity;");
-    if (activity.isValid()) {
-        QJniObject filesDir = activity.callObjectMethod(
-            "getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;", nullptr);
-        if (filesDir.isValid())
-            dir = filesDir.toString();
-    }
+    QJniObject dirJ = QJniObject::callStaticObjectMethod(
+        "org/speedynote/app/SpeedyNoteActivity", "bootLogDir", "()Ljava/lang/String;");
+    if (dirJ.isValid())
+        dir = dirJ.toString();
     if (dir.isEmpty())
         dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
 
